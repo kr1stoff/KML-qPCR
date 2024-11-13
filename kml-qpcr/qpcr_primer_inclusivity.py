@@ -31,7 +31,10 @@ def main(workdir, cores):
     incl_dir = Path(workdir).resolve().joinpath('inclusivity')
     incl_dir.mkdir(exist_ok=True)
     incl_dir_done_flag = incl_dir.resolve().joinpath('inclusivity.DONE')
+
+    # * 检查输入
     check_input(primer3_pardir, incl_dir_done_flag)
+
     # 引物 名称和序列 的映射
     prim_name_dict = json.load(open(primer_json))
 
@@ -39,12 +42,36 @@ def main(workdir, cores):
     for parse_tab in primer3_pardir.glob('*.tsv'):
         inclu_input_tuple.append((parse_tab, blast_out, prim_name_dict,
                                  incl_dir.joinpath(parse_tab.name)))
-    # 并行分析
+    # * 并行分析
     with Pool(cores) as pool:
         pool.map(evaluate_inclusivity, inclu_input_tuple)
 
+    # * 合并引物列表, 去除空文件
+    merge_primer_table(workdir)
+
     incl_dir_done_flag.touch()
     logging.info('评估引物包容性完成')
+
+
+def merge_primer_table(workdir):
+    """
+    合并引物列表, 去除空文件
+    """
+    outlist = []
+    for incl_tab in Path(workdir).resolve().joinpath('inclusivity').glob('*.tsv'):
+        with open(incl_tab) as f:
+            reader = csv.DictReader(f, delimiter='\t')
+            # ! 直接 len(list(reader)) 会迭代完条目, 后面就写不进 outlist 了, 所以先转成 list
+            reader_list = list(reader)
+            if len(reader_list) == 0:
+                continue
+            for row in reader_list:
+                outlist.append(row.values())
+
+    with open(Path(workdir).resolve().joinpath('inclusivity.tsv'), 'w') as f:
+        f.write('\t'.join(reader.fieldnames) + '\n')
+        for it in outlist:
+            f.write('\t'.join(it) + '\n')
 
 
 def check_input(primer3_pardir, incl_dir_done_flag):
@@ -104,7 +131,7 @@ def evaluate_inclusivity(input_tuple):
     # 过滤并输出结果
     with open(parse_tab) as f, open(incl_out, 'w') as g:
         reader = csv.DictReader(f, delimiter='\t')
-        g.write('\t'.join(['inclusensity'] + reader.fieldnames) + '\n')
+        g.write('\t'.join(['hits'] + reader.fieldnames) + '\n')
 
         for row in reader:
             inclu_nucles = []
@@ -114,10 +141,16 @@ def evaluate_inclusivity(input_tuple):
             # 满足的引物对
             primer_pairs = []
             for fh in forward_hits:
-                sseqid_f, sstart_f = fh[nih.sseqid], int(fh[nih.sstart])
+                sseqid_f, sstart_f, sstrand_f = fh[nih.sseqid], int(fh[nih.sstart]), fh[nih.sstrand]
+                # ! 保留上游引物正向比对
+                if sstrand_f != 'plus':
+                    continue
                 # * blast minus, 起始位置和终止位置按照 5->3, sstart > send
                 for rh in reverse_hits:
-                    sseqid_r, send_r = rh[nih.sseqid], int(rh[nih.send])
+                    sseqid_r, send_r, sstrand_r = rh[nih.sseqid], int(rh[nih.send]), rh[nih.sstrand]
+                    # ! 保留下游引物反向比对
+                    if sstrand_r != 'minus':
+                        continue
                     # ! 保留上下游引物在同一条染色体上，并且长度在阈值内
                     if (sseqid_f == sseqid_r) and (min_prod_len < (send_r - sstart_f) < max_prod_len):
                         primer_pairs.append([sseqid_f, int(fh[nih.send]), send_r])
@@ -125,8 +158,11 @@ def evaluate_inclusivity(input_tuple):
             for pp in primer_pairs:
                 for ph in probe_hits:
                     pp_chrom, pp_start, pp_end = pp
-                    sseqid_p, sstart_p, send_p = ph[nih.sseqid], int(
-                        ph[nih.sstart]), int(ph[nih.send])
+                    sseqid_p, sstart_p, send_p, sstrand_p = ph[nih.sseqid], int(
+                        ph[nih.sstart]), int(ph[nih.send]), ph[nih.sstrand]
+                    #! 保留探针正向比对
+                    if sstrand_p != 'plus':
+                        continue
                     # ! 染色体相同, F引物右端 --- 探针 --- R引物左端
                     if (sseqid_p == pp_chrom) and (sstart_p > pp_start) and (send_p < pp_end):
                         inclu_nucles.append(pp_chrom)

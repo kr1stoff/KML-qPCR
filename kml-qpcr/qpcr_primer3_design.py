@@ -27,9 +27,9 @@ def main(fasta, workdir, cores):
     logging.info(f'工作目录: {workdir}')
     logging.info(f'并行数: {cores}')
     home = Path(__file__).resolve().parents[1]
-    template = home.joinpath('etc/template.p3')
-    primer3 = yaml.safe_load(open(home.joinpath('etc/software.yaml')).read())['primer3']
-    parallel = yaml.safe_load(open(home.joinpath('etc/software.yaml')).read())['parallel']
+    template = home.joinpath('config/template.p3')
+    primer3 = yaml.safe_load(open(home.joinpath('config/software.yaml')).read())['primer3']
+    parallel = yaml.safe_load(open(home.joinpath('config/software.yaml')).read())['parallel']
     shell_dir = Path(workdir).resolve().joinpath('shell')
     shell_dir.mkdir(parents=True, exist_ok=True)
 
@@ -55,7 +55,7 @@ def split_and_write_primer_inputs(fasta, workdir, template, primer3, shell_dir, 
     primer3_indir.mkdir(parents=True, exist_ok=True)
     primer3_outdir = Path(workdir).resolve().joinpath('primer3_out')
     primer3_outdir.mkdir(parents=True, exist_ok=True)
-    primer3_indir_done_flag = primer3_outdir.resolve().joinpath('primer3_in.DONE')
+    primer3_indir_done_flag = primer3_indir.resolve().joinpath('primer3_in.DONE')
 
     if primer3_indir_done_flag.exists():
         logging.info('primer3_in 目录已存在, 跳过拆分序列写入到多个配置文件')
