@@ -5,11 +5,13 @@
 - download
 
 ```bash
-mamba run -n python3.12 poetry run python -m src.kml_qpcr.downloader
+mamba -n python3.12 run poetry run \
+  python -m src.kml_qpcr --genome-dir /data/mengxf/Project/KML250416_chinacdc_pcr/genomes \
+  download --sci-name 'Anaplasma phagocytophilum'
 ```
 
 ## 测试
 
 ```bash
-mamba run -n python3.12 poetry run python -m tests.test_configure
+mamba -n python3.12 run poetry run python -m tests.test_taxonomy
 ```

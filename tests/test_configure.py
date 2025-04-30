@@ -1,3 +1,3 @@
-from src.config.configure import PROJECT_DIR
+from src.config.cnfg_database import TAXONKIT_DB
 
-print(PROJECT_DIR)
+print(TAXONKIT_DB)
