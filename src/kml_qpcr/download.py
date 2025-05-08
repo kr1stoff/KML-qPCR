@@ -29,7 +29,7 @@ def get_taxonomy_id_from_sciname(sciname: str, infodir: Path) -> list:
     try:
         _, txid, rank = output.split("\t")
     except ValueError:
-        raise ValueError(f"输出格式错误或为 homotypic synonym: {cmd_name2taxid}\n输出: {output}")
+        raise ValueError(f"输出格式错误或为别名, 请确认物种名称: {cmd_name2taxid}\n输出: {output}")
     # 检查 rank 是否在允许范围内, 科及一下级别
     if rank not in BELOW_FAMILY_RANKS:
         raise ValueError(f"当前 scientific name 的 rank 不在允许范围内(科及以下级别): {rank}")
@@ -91,7 +91,7 @@ def download_genome_files(df_asmb_smry: pd.DataFrame, alldir: Path) -> None:
         # 获取当前基因组的 ftp 目录页面, 要把 '/' 加上
         res = run(f"curl -l {ftp_path}/", shell=True, capture_output=True, text=True, check=True)
         html_content = res.stdout.strip()
-        # 查看 fna, gtf, gff, faa 哪些文件可以下载
+        # 查看 fna, gtf, gff, faa 哪些文件可以下载homotypic synonym
         target_files = [prfx + kw for kw in ["_genomic.fna.gz",
                                              "_genomic.gff.gz", "_genomic.gtf.gz", "_protein.faa.gz"]]
         existed_links = []

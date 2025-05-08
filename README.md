@@ -2,7 +2,7 @@
 
 ## 运行
 
-- download
+- 下载基因组
 
 ```bash
 mamba -n python3.12 run poetry run \
