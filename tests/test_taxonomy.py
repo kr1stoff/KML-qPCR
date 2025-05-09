@@ -1,4 +1,4 @@
-from src.kml_qpcr.download import get_taxonomy_id_from_sciname
+from src.kml_qpcr.gnm_download import get_taxonomy_id_from_sciname
 
 
 # sciname = "Escherichia coli"

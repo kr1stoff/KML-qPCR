@@ -6,7 +6,7 @@
 
 ```bash
 mamba -n python3.12 run poetry run \
-  python -m src.kml_qpcr --genome-dir /data/mengxf/Project/KML250416_chinacdc_pcr/genomes \
+  python -m src.kml_qpcr --genome-set-dir /data/mengxf/Project/KML250416_chinacdc_pcr/genomes \
   download --sci-name 'Anaplasma phagocytophilum'
 ```
 
