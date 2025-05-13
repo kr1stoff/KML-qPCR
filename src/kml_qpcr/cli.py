@@ -46,4 +46,4 @@ def download(ctx, sci_name):
 def assess(ctx, sci_name, pathogen_type, threads):
     """质控评估"""
     gnmdir = Path(ctx.obj["dir_genome_set"]).joinpath(sci_name.replace(" ", "_"))
-    assess_genome_quality(gnmdir, threads)
+    assess_genome_quality(gnmdir, threads, pathogen_type)

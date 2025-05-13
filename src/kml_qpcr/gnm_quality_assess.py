@@ -5,9 +5,10 @@ from functools import reduce
 import pandas as pd
 
 from src.config.cnfg_software import MAMBA
+from src.config.cnfg_database import CHECKV_DB
 
 
-def assess_genome_quality(dir_genome: Path, threads: int):
+def assess_genome_quality(dir_genome: Path, threads: int, pthgn_type):
     """
     基因组质量评估
     dir_genome: 基因组目录, 例 /data/mengxf/Project/KML250416_chinacdc_pcr/genomes/Ehrlichia_chaffeensis
@@ -21,8 +22,13 @@ def assess_genome_quality(dir_genome: Path, threads: int):
     │   └── GCF_000632965.1
     └── ...
     """
-    run_checkm(dir_genome, threads)
-    # todo checkv 和 checkm 逻辑不同
+    if pthgn_type == "Bacteria":
+        # 细菌
+        run_checkm(dir_genome, threads)
+    else:
+        # 病毒
+        run_checkv(dir_genome, threads)
+
     # TODO 后入按需添加 BUSCO, QUAST, etc.
 
 
@@ -68,16 +74,16 @@ def run_checkv(dir_genome: Path, threads: int):
     dir_checkv_bins.mkdir(parents=True, exist_ok=True)
     # 并行和线程
     prl_num = 4
-    sgl_thrd = threads // parallel_num
+    sgl_thrd = threads // prl_num
     # 搜索所有的 fna.gz 文件, 写入批量运行脚本
     with open(dir_checkv / "checkv_batch.sh", "w") as f:
         for fna in dir_all.glob("GC*/*_genomic.fna.gz"):
-            cmd_checkv = f"{MAMBA} -n qpcr run checkv end_to_end -t {sgl_thrd} "
-            f"-d /data/mengxf/Database/checkV/checkv-db-v1.5 {fna} {dir_checkv_bins}/{fna.parent.name}\n"
+            cmd_checkv = f"{MAMBA} -n qpcr run checkv end_to_end -t {sgl_thrd} -d {CHECKV_DB} {fna} {dir_checkv_bins}/{fna.parent.name}\n"
             f.write(cmd_checkv)
     # 运行失败就中断
     res = run(
         f"cat {dir_checkv}/checkv_batch.sh | {MAMBA} -n basic run parallel -j {prl_num}", shell=True, check=True)
+    logging.debug(f"运行 checkV: {res.args}")
     if res.returncode != 0:
         raise RuntimeError("CheckV 批量运行失败.")
     # 合并结果
@@ -87,7 +93,6 @@ def run_checkv(dir_genome: Path, threads: int):
         df = pd.read_csv(altsmr, sep="\t")
         df.insert(0, "genome_id", altsmr.parent.name)
         dfs.append(df)
-
     dfmrg = reduce(lambda x, y: pd.concat([x, y]), dfs)
     dfmrg.to_excel(dir_checkv / "checkv_summary.xlsx", index=False)
     dfmrg.to_csv(dir_checkv / "checkv_summary.tsv", sep="\t", index=False)
