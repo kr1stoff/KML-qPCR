@@ -1,6 +1,3 @@
-import logging
-
-
 def list2txt(list, filename):
     """
     将列表写入文本文件，每行一个条目

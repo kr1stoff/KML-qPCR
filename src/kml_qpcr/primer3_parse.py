@@ -4,10 +4,6 @@ import logging
 from pathlib import Path
 from multiprocessing import Pool
 
-logging.basicConfig(level=logging.DEBUG,
-                    format="%(asctime)s - %(levelname)s - %(filename)s - %(message)s",
-                    datefmt="%Y-%m-%d %H:%M:%S")
-
 
 @click.command()
 @click.option("--workdir", default="qpcr_analysis", show_default=True, help="引物分析工作目录.")
@@ -61,8 +57,8 @@ def parse_primer3_out(input_tuple):
 
     with open(parse_tab, "w") as f:
         header = "forward_sequence\treverse_sequence\tprobe_sequence\t"\
-        "chromosome\tforward_length\tforward_tm\tforward_gc\treverse_length\treverse_tm\treverse_gc\t"\
-        "probe_length\tprobe_tm\tprobe_gc\tamplicon_tm\tamplicon_length\n"
+            "chromosome\tforward_length\tforward_tm\tforward_gc\treverse_length\treverse_tm\treverse_gc\t"\
+            "probe_length\tprobe_tm\tprobe_gc\tamplicon_tm\tamplicon_length\n"
         f.write(header)
         for i in range(len(forward_pos)):
             # * 输出结果使用 samtools faidx 1-based 坐标

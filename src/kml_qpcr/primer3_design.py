@@ -8,11 +8,6 @@ from multiprocessing import Pool
 from src.config.cnfg_software import MAMBA
 
 
-logging.basicConfig(level=logging.DEBUG,
-                    format="%(asctime)s - %(levelname)s - %(filename)s - %(message)s",
-                    datefmt="%Y-%m-%d %H:%M:%S")
-
-
 @click.command()
 @click.option("--fasta", required=True, help="输入用于设计引物的FASTA序列文件.")
 @click.option("--workdir", default="qpcr_analysis", show_default=True, help="引物分析工作目录.")
@@ -54,7 +49,7 @@ def split_and_write_primer_inputs(fasta, workdir, template, shell_dir, threads):
     write_primer3_input_tuple = []
     # 并行运行 primer3 的 shell 列表, 写入到 batch.sh 给 parallel 运行
     para_shells = []
-    # primer input 模板, 不在 for 中使用, 频繁 IO 速度慢
+    # ! primer input 模板, 不在 for 中使用, 频繁 IO 速度慢
     primer3_template = open(template).read()
 
     for record in records:

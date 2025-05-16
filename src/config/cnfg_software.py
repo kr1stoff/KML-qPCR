@@ -2,3 +2,4 @@
 # - basic: parallel, taxonkit
 # - qpcr: checkm, checkv， primer3_core
 MAMBA = "/home/mengxf/miniforge3/bin/mamba"
+AMPLICON_EXTRACTOR = "/data/mengxf/Software/bin/amplicon-extractor"
