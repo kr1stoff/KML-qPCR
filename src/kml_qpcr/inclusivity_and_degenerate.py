@@ -32,7 +32,7 @@ def main(ref_seqs, workdir, threads):
     rdc_df = rdc_df.drop_duplicates().reset_index(drop=True)
 
     # ! 耗时久调试过程中已完成就跳过, 并行批量运行扩增子/探针提取步骤
-    # run_amplicon_command_batch(rdc_df, ref_seqs, incldir, shelldir, threads)
+    run_amplicon_command_batch(rdc_df, ref_seqs, incldir, shelldir, threads)
 
     # 批量计算包含性和简并引物探针
     pargs = [(item.forward_sequence, item.reverse_sequence, item.probe_sequence, ref_seqs, incldir)
@@ -89,10 +89,7 @@ def calc_inclusivity(sqs, curdir) -> float:
     # 包含引物探针的序列数 / 参考序列数
     nsqs = count_sequence(sqs)
     nincl = count_sequence(f"{curdir}/incl.probe.fa")
-    # ! 如果没有抓取到扩增子和探针序列, 则返回 0
-    if nsqs and nincl:
-        return int(nincl) / int(nsqs)
-    return 0
+    return int(nincl) / int(nsqs)
 
 
 def analyze_degenerate_primer_probe(fwd, rvs, curdir) -> tuple[str, int, str, int, str, int]:
@@ -104,7 +101,7 @@ def analyze_degenerate_primer_probe(fwd, rvs, curdir) -> tuple[str, int, str, in
     :return: 简并引物序列和简并位点数量
     """
     def read_sequences(file_path: str) -> list[str]:
-        # ! seqkit amplicon 会输出很多空行, 是假阳性, 要删掉
+        # seqkit amplicon 会输出很多空行, 是假阳性, 要删掉
         raw_sqs = run(f"grep -v '>' {curdir}/{file_path}", shell=True,
                       check=True, stdout=PIPE, encoding="utf-8").stdout.strip().split("\n")
         return [seq for seq in raw_sqs if seq]
