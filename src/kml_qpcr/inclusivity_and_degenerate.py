@@ -10,6 +10,37 @@ from Bio.Seq import Seq
 from src.config.cnfg_software import AMPLICON_EXTRACTOR, MAMBA
 
 
+@click.command()
+@click.option("--ref-seqs", required=True, help="输入参考序列集, 比如多个基因组的同源基因,CDS,转录本,保守区域等.")
+@click.option("--workdir", default="qpcr_analysis", show_default=True, help="引物分析工作目录, 在该目录下读 primer3_parse 作为输入.")
+@click.option("--threads", default=8, type=int, show_default=True, help="最大线程数.")
+@click.help_option(help="显示帮助信息.")
+def main(ref_seqs, workdir, threads):
+    workdir = Path(workdir)
+    # MAIN
+    prsdir = workdir.joinpath("primer3_parse")
+    shelldir = workdir.joinpath("shell")
+    shelldir.mkdir(parents=True, exist_ok=True)
+    incldir = workdir.joinpath("inclusivity_and_degenerate")
+    incldir.mkdir(parents=True, exist_ok=True)
+    # 合并所有引物探针，然后去重
+    prs_files = list(prsdir.glob("*.tsv"))
+    # ! 每个区域只要前 5 个, 如果敏感性不够再加
+    dfs = [pd.read_csv(pf, sep='\t', usecols=['forward_sequence', 'reverse_sequence',
+                                              'probe_sequence']).head(5) for pf in prs_files]
+    rdc_df = reduce(lambda up, down: pd.concat([up, down]), dfs)
+    rdc_df = rdc_df.drop_duplicates().reset_index(drop=True)
+
+    # ! 耗时久调试过程中已完成就跳过, 并行批量运行扩增子/探针提取步骤
+    # run_amplicon_command_batch(rdc_df, ref_seqs, incldir, shelldir, threads)
+
+    # 批量计算包含性和简并引物探针
+    pargs = [(item.forward_sequence, item.reverse_sequence, item.probe_sequence, ref_seqs, incldir)
+             for item in rdc_df.itertuples()]
+    with Pool(threads) as pool:
+        pool.map(analysis_inclusivity, pargs)
+
+
 def get_degenerate_primer(inseqs) -> tuple[str, int]:
     """
     根据输入序列集生成简并引物
@@ -53,12 +84,15 @@ def calc_inclusivity(sqs, curdir) -> float:
     :Param curdir: 当前输出目录
     :Return: 包含性
     """
-    def count_sequence(file_name: str) -> int:
-        return run(f"grep -c '>' {curdir}/{file_name}", shell=True, check=True, stdout=PIPE, encoding="utf-8").stdout.strip()
+    def count_sequence(file_path: str) -> str:
+        return run(f"grep -c '>' {file_path}", shell=True, stdout=PIPE, encoding="utf-8").stdout.strip()
     # 包含引物探针的序列数 / 参考序列数
     nsqs = count_sequence(sqs)
     nincl = count_sequence(f"{curdir}/incl.probe.fa")
-    return int(nincl) / int(nsqs)
+    # ! 如果没有抓取到扩增子和探针序列, 则返回 0
+    if nsqs and nincl:
+        return int(nincl) / int(nsqs)
+    return 0
 
 
 def analyze_degenerate_primer_probe(fwd, rvs, curdir) -> tuple[str, int, str, int, str, int]:
@@ -69,13 +103,16 @@ def analyze_degenerate_primer_probe(fwd, rvs, curdir) -> tuple[str, int, str, in
     :param curdir: 输出目录
     :return: 简并引物序列和简并位点数量
     """
-    def read_sequences(file_name: str) -> list[str]:
-        return run(f"grep -v '>' {curdir}/{file_name}", shell=True, check=True, stdout=PIPE, encoding="utf-8").stdout.strip().split("\n")
+    def read_sequences(file_path: str) -> list[str]:
+        # ! seqkit amplicon 会输出很多空行, 是假阳性, 要删掉
+        raw_sqs = run(f"grep -v '>' {curdir}/{file_path}", shell=True,
+                      check=True, stdout=PIPE, encoding="utf-8").stdout.strip().split("\n")
+        return [seq for seq in raw_sqs if seq]
     # 获取目标扩增子集序列
     amplc_sqs = read_sequences("dgnrt.amplicon.fa")
     # 截取上游和下游引物
     fwd_sqs = [seq[:len(fwd)] for seq in amplc_sqs]
-    # ! 下游引物需要反向互补
+    # * 下游引物需要反向互补
     rvs_sqs = [Seq(seq).reverse_complement()[:len(rvs)] for seq in amplc_sqs]
     prb_sqs = read_sequences("dgnrt.probe.fa")
     # 获取引物和探针的简并序列和简并位点数量
@@ -87,7 +124,7 @@ def analyze_degenerate_primer_probe(fwd, rvs, curdir) -> tuple[str, int, str, in
             prb_dgnrt_seq, prb_dgnrt_num)
 
 
-def analysis_inclusivity(pargs):
+def analysis_inclusivity(pargs) -> None:
     """
     包容性分析
     :param pargs: 并行分析参数元组
@@ -104,8 +141,11 @@ def analysis_inclusivity(pargs):
     curdir.mkdir(parents=True, exist_ok=True)
     # 计算包容性
     inclusivity = calc_inclusivity(sqs, curdir)
+    # ! 包容性小于 50% 就不往下做了
+    if inclusivity < 0.5:
+        return
     # 分析简并引物和探针
-    rtntpl = analyze_degenerate_primer_probe(fwd, rvs, prb, sqs, curdir)
+    rtntpl = analyze_degenerate_primer_probe(fwd, rvs, curdir)
     fwd_dgnrt_seq, fwd_dgnrt_num, rvs_dgnrt_seq, rvs_dgnrt_num, prb_dgnrt_seq, prb_dgnrt_num = rtntpl
     # 写入当前文件夹下的包含性结果
     with open(curdir.joinpath("inclusivity_and_degenerate.txt"), "w") as f:
@@ -150,32 +190,9 @@ def run_amplicon_command_batch(rdc_df, refsqs, incldir: Path, shelldir: Path, th
     # 写入总 shell 脚本, 然后运行
     with open(shelldir.joinpath("amplicon_extractor.sh"), "w") as f:
         f.write("\n".join(total_shell))
-    run(f"cat {shelldir}/amplicon_extractor.sh | {MAMBA} run -n basic parallel -j {threads}", shell=True, check=True)
+    run(f"cat {shelldir}/amplicon_extractor.sh | {MAMBA} run -n basic parallel -j {threads}",
+        shell=True, check=True)
 
 
-# IO
-workdir = Path(
-    "/data/mengxf/Project/KML250416_chinacdc_pcr/genomes/Orthonairovirus_haemorrhagiae/primer_design")
-refsqs = "/data/mengxf/Project/KML250416_chinacdc_pcr/genomes/Orthonairovirus_haemorrhagiae/genome_assess/checkv/S.filtered.fna"
-threads = 32
-
-# MAIN
-prsdir = workdir.joinpath("primer3_parse")
-shelldir = workdir.joinpath("shell")
-shelldir.mkdir(parents=True, exist_ok=True)
-incldir = workdir.joinpath("inclusivity_and_degenerate")
-incldir.mkdir(parents=True, exist_ok=True)
-# 合并所有引物探针，然后去重
-prs_files = list(prsdir.glob("*.tsv"))
-# ! 每个区域只要前 5 个, 如果敏感性不够再加
-dfs = [pd.read_csv(pf, sep='\t', usecols=['forward_sequence', 'reverse_sequence',
-                   'probe_sequence']).head(5) for pf in prs_files]
-rdc_df = reduce(lambda up, down: pd.concat([up, down]), dfs)
-rdc_df = rdc_df.drop_duplicates().reset_index(drop=True)
-# ! 耗时久调试过程中已完成就跳过, 并行批量运行扩增子/探针提取步骤
-run_amplicon_command_batch(rdc_df, refsqs, incldir, shelldir, threads)
-# 批量计算包含性和简并引物探针
-pargs = [(item.forward_sequence, item.reverse_sequence, item.probe_sequence, refsqs, incldir)
-         for item in rdc_df.itertuples()]
-with Pool(threads) as pool:
-    pool.map(analysis_inclusivity, pargs)
+if __name__ == "__main__":
+    main()

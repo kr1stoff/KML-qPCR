@@ -22,9 +22,16 @@ seqkit grep --threads 32 --line-width 0 --by-name -r -f genome_assess/checkv/S.r
 seqkit sliding --step 100 --window 200 --line-width 0 genome_assess/checkv/S.filtered.fna -o primer_design/S.sliding.fna
 # 去重
 seqkit rmdup --by-seq --line-width 0 primer_design/S.sliding.fna -o primer_design/S.sliding.rmdup.fna
+# primer3 引物设计
 # ! 输入输出用绝对路径
 mamba -n python3.12 run poetry -C /data/mengxf/GitHub/KML-qPCR run python -m src.kml_qpcr.primer3_design --threads 32 \
     --fasta /data/mengxf/Project/KML250416_chinacdc_pcr/genomes/Orthonairovirus_haemorrhagiae/primer_design/S.sliding.rmdup.fna \
     --workdir /data/mengxf/Project/KML250416_chinacdc_pcr/genomes/Orthonairovirus_haemorrhagiae/primer_design
+#  primer3 引物解析
 mamba -n python3.12 run poetry -C /data/mengxf/GitHub/KML-qPCR run python -m src.kml_qpcr.primer3_parse --threads 32 \
     --workdir /data/mengxf/Project/KML250416_chinacdc_pcr/genomes/Orthonairovirus_haemorrhagiae/primer_design
+#3 计算包容性和输出简并引物
+mamba run -n python3.12 poetry -C /data/mengxf/GitHub/KML-qPCR run python -m src.kml_qpcr.inclusivity_and_degenerate \
+	--ref-seqs /data/mengxf/Project/KML250416_chinacdc_pcr/genomes/Orthonairovirus_haemorrhagiae/genome_assess/checkv/S.filtered.fna \
+	--workdir /data/mengxf/Project/KML250416_chinacdc_pcr/genomes/Orthonairovirus_haemorrhagiae/primer_design \
+	--threads 32
