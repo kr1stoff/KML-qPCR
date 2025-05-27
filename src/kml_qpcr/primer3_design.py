@@ -5,7 +5,7 @@ from Bio import SeqIO
 from subprocess import run
 from multiprocessing import Pool
 
-from src.config.cnfg_software import MAMBA
+from src.config.cnfg_software import PRIMER3, PARALLEL
 
 
 @click.command()
@@ -57,7 +57,7 @@ def split_and_write_primer_inputs(fasta, workdir, template, shell_dir, threads):
         seq = record.seq
         write_primer3_input_tuple.append((primer3_indir, name, seq, primer3_template))
         para_shells.append(
-            f"{MAMBA} -n qpcr run primer3_core < {primer3_indir}/{name}.p3 > {primer3_outdir}/{name}.out")
+            f"{PRIMER3} < {primer3_indir}/{name}.p3 > {primer3_outdir}/{name}.out")
 
     # 并行写 primer3 输入文件
     with Pool(threads) as pool:
@@ -86,7 +86,7 @@ def parallel_run_primer3(shell_dir, threads):
     :param shell_dir: shell 脚本目录.
     :param threads: 并行数.
     """
-    cmd = f"cat {shell_dir}/primer3_batch.sh | {MAMBA} -n basic run parallel -j {threads}"
+    cmd = f"cat {shell_dir}/primer3_batch.sh | {PARALLEL} -j {threads}"
     logging.debug(f"运行 primer3 命令: {cmd}")
     res = run(cmd, shell=True, executable="/bin/bash", capture_output=True, encoding="utf-8")
 

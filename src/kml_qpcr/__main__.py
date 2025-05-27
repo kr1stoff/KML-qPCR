@@ -1,5 +1,5 @@
 import logging
-from src.kml_qpcr.cli import mycli
+from src.kml_qpcr.cmd_line import mycli
 
 # 日志规则
 logging.basicConfig(level=logging.DEBUG,
@@ -8,4 +8,4 @@ logging.basicConfig(level=logging.DEBUG,
 
 # 命令行参数和主流程在 mycli 中
 if __name__ == "__main__":
-    mycli(obj={})
+    mycli()

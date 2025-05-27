@@ -7,7 +7,7 @@ from collections import Counter
 from multiprocessing import Pool
 from Bio.Seq import Seq
 
-from src.config.cnfg_software import AMPLICON_EXTRACTOR, MAMBA
+from src.config.cnfg_software import AMPLICON_EXTRACTOR, SEQKIT, PARALLEL
 
 
 @click.command()
@@ -173,11 +173,11 @@ def run_amplicon_command_batch(rdc_df, refsqs, incldir: Path, shelldir: Path, th
         cmd = f"""
         mkdir -p {curdir}
         {AMPLICON_EXTRACTOR} -F {refsqs} -m 6 -f {fwd} -r {rvs} -o {curdir}/incl.amplicon.fa
-        {MAMBA} run -n basic seqkit amplicon --only-positive-strand --output-mismatches --line-width 0 \
+        {SEQKIT} amplicon --only-positive-strand --output-mismatches --line-width 0 \
             --max-mismatch 6 --forward {prb} {curdir}/incl.amplicon.fa > {curdir}/incl.probe.fa
-        {MAMBA} run -n basic seqkit amplicon --only-positive-strand --output-mismatches --line-width 0 \
+        {SEQKIT} amplicon --only-positive-strand --output-mismatches --line-width 0 \
             --max-mismatch 3 --forward {fwd} --reverse {rvs} {refsqs} > {curdir}/dgnrt.amplicon.fa
-        {MAMBA} run -n basic seqkit amplicon --only-positive-strand --output-mismatches --line-width 0 \
+        {SEQKIT} amplicon --only-positive-strand --output-mismatches --line-width 0 \
             --max-mismatch 6 --forward {prb} {curdir}/dgnrt.amplicon.fa > {curdir}/dgnrt.probe.fa
         """
         # 写入当前文件夹下的包含性结果
@@ -187,7 +187,7 @@ def run_amplicon_command_batch(rdc_df, refsqs, incldir: Path, shelldir: Path, th
     # 写入总 shell 脚本, 然后运行
     with open(shelldir.joinpath("amplicon_extractor.sh"), "w") as f:
         f.write("\n".join(total_shell))
-    run(f"cat {shelldir}/amplicon_extractor.sh | {MAMBA} run -n basic parallel -j {threads}",
+    run(f"cat {shelldir}/amplicon_extractor.sh | {PARALLEL} -j {threads}",
         shell=True, check=True)
 
 

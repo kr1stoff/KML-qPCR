@@ -7,7 +7,7 @@ import pandas as pd
 from bs4 import BeautifulSoup
 
 from src.config.cnfg_database import TAXONKIT_DB, ASSEMBLY_SUMMARY_GENBANK, ASSEMBLY_SUMMARY_REFSEQ
-from src.config.cnfg_software import MAMBA
+from src.config.cnfg_software import TAXONKIT
 from src.config.cnfg_taxonomy import BELOW_FAMILY_RANKS
 from src.utils.util_command import execute_command
 from src.utils.util_write import list2txt
@@ -24,7 +24,7 @@ def get_taxonomy_id_from_sciname(sciname: str, infodir: Path) -> list:
     logging.info(f"获取 {sciname} 的 taxonomy id 列表")
     # 获取 scientific name 的 taxonomy id 和 rank
     cmd_name2taxid = (
-        f"echo '{sciname}' | {MAMBA} -n basic run taxonkit name2taxid --data-dir {TAXONKIT_DB} --show-rank --sci-name")
+        f"echo '{sciname}' | {TAXONKIT} name2taxid --data-dir {TAXONKIT_DB} --show-rank --sci-name")
     output = execute_command(cmd_name2taxid)
     try:
         _, txid, rank = output.split("\t")
@@ -35,7 +35,7 @@ def get_taxonomy_id_from_sciname(sciname: str, infodir: Path) -> list:
         raise ValueError(f"当前 scientific name 的 rank 不在允许范围内(科及以下级别): {rank}")
     # 获取当前分类级别下的 taxonomy id 列表
     cmd_list_taxids = (
-        f"{MAMBA} -n basic run taxonkit list --data-dir {TAXONKIT_DB} --indent '' --ids {txid}")
+        f"{TAXONKIT} list --data-dir {TAXONKIT_DB} --indent '' --ids {txid}")
     taxid_output = execute_command(cmd_list_taxids)
     taxids = taxid_output.split("\n")
     if not taxids or taxids == [""]:
@@ -91,9 +91,9 @@ def download_genome_files(df_asmb_smry: pd.DataFrame, alldir: Path) -> None:
         # 获取当前基因组的 ftp 目录页面, 要把 '/' 加上
         res = run(f"curl -l {ftp_path}/", shell=True, capture_output=True, text=True, check=True)
         html_content = res.stdout.strip()
-        # 查看 fna, gtf, gff, faa 哪些文件可以下载homotypic synonym
-        target_files = [prfx + kw for kw in ["_genomic.fna.gz",
-                                             "_genomic.gff.gz", "_genomic.gtf.gz", "_protein.faa.gz"]]
+        # 查看 fna, gtf, gff, faa 哪些文件可以下载 homotypic synonym
+        target_files = [prfx + kw for kw in ["_genomic.fna.gz", "_genomic.gff.gz",
+                                             "_genomic.gtf.gz", "_protein.faa.gz", "_genomic.gbff.gz"]]
         existed_links = []
         soup = BeautifulSoup(html_content, "html.parser")
         for a_tag in soup.find_all("a", href=True):
