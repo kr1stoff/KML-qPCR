@@ -2,17 +2,22 @@ from pathlib import Path
 from subprocess import run
 import logging
 from functools import reduce
+from unittest import result
 import pandas as pd
 
 from src.config.cnfg_software import CSVTK, PARALLEL, ACTIVATE
 from src.config.cnfg_database import CHECKV_DB
 
 
-def assess_genome_quality(genome_dir: Path, threads: int, pthgn_type):
+def assess_genome_quality(sci_name: str, genome_set_dir: str, threads: int, pthgn_type: str, force: bool = False):
     """
     基因组质量评估
-    genome_dir: 基因组目录, 例 /data/mengxf/Project/KML250416_chinacdc_pcr/genomes/Ehrlichia_chaffeensis
-    threads: 线程数
+    :gnmdir: 基因组目录, 例 /data/mengxf/Project/KML250416_chinacdc_pcr/genomes/Ehrlichia_chaffeensis
+    :threads: 线程数
+    :pthgn_type: 病原类型, 例 Bacteria 或 Viruses
+    :force: 是否强制重新运行 checkM/checkV, 默认识别到结果文件就跳过
+    :return: None
+
     目录结构:
     genomes/Ehrlichia_chaffeensis
     ├── all
@@ -22,76 +27,96 @@ def assess_genome_quality(genome_dir: Path, threads: int, pthgn_type):
     │   └── GCF_000632965.10
     └── ...
     """
+    gnmdir = Path(genome_set_dir).joinpath(sci_name.replace(" ", "_"))
     if pthgn_type == "Bacteria":
+        # FIXME 调试时不运行 checkm
         # 细菌
-        run_checkm(genome_dir, threads)
-        filter_by_checkm(genome_dir)
+        run_checkm(gnmdir, threads, force)
+        filter_by_checkm(gnmdir)
     else:
         # 病毒
-        run_checkv(genome_dir, threads)
-        filter_by_checkv(genome_dir)
+        run_checkv(gnmdir, threads, force)
+        filter_by_checkv(gnmdir)
 
 
-def run_checkm(genome_dir: Path, threads: int):
+def run_checkm(gnmdir: Path, threads: int, force: bool):
     """
     运行 checkM
     checkM 评估 bins 多个基因组
-    genome_dir: 基因组目录, 例 /data/mengxf/Project/KML250416_chinacdc_pcr/genomes/Ehrlichia_chaffeensis
+    gnmdir: 基因组目录, 例 /data/mengxf/Project/KML250416_chinacdc_pcr/genomes/Ehrlichia_chaffeensis
     threads: 线程数
     """
     # 创建 checkM 输入 bins 目录，复制并解压所有基因组
-    all_dir = genome_dir.joinpath("all")
+    all_dir = gnmdir.joinpath("all")
     bins_dir = all_dir.joinpath("bins")
     bins_dir.mkdir(parents=True, exist_ok=True)
     run(f"cp {all_dir}/*/*_genomic.fna.gz {bins_dir}", shell=True, check=True)
     run(f"gunzip --force {bins_dir}/*gz", shell=True, check=True)
     # 运行 checkM
-    checkm_dir = genome_dir.joinpath("genome_assess/checkm")
+    checkm_dir = gnmdir.joinpath("genome_assess/checkm")
     checkm_dir.mkdir(parents=True, exist_ok=True)
+    result_file = checkm_dir.joinpath("result.tsv")
+    # * 如果结果文件已存在且不强制运行，则跳过
+    if result_file.exists() and not force:
+        logging.info(f"checkM 结果文件 {result_file} 已存在, 跳过运行.")
+        return
     # 并行太多 mamba run 会报文件锁的错误
     checkm_cmd = f"""
     source {ACTIVATE} qpcr
     checkm lineage_wf \
         -x fna --tab_table -t {threads} --pplacer_threads {threads} \
-        -f {checkm_dir}/result.tsv \
+        -f {result_file} \
         {bins_dir} \
         {checkm_dir}
     conda deactivate
     """
     logging.debug(f"运行 checkM: {checkm_cmd}")
     run(checkm_cmd, shell=True, check=True, executable="/bin/bash")
-    run(f"{CSVTK} -t csv2xlsx {checkm_dir}/result.tsv", shell=True, check=True)
+    run(f"{CSVTK} -t csv2xlsx {result_file}", shell=True, check=True)
 
 
-def filter_by_checkm(genome_dir):
+def get_genome_anno_quality(gnmdir: Path):
+    """
+    获取基因组注释质量
+    :param gnmdir: 基因组目录
+    """
+
+
+def filter_by_checkm(gnmdir: Path):
     """
     根据 checkM 结果过滤基因组, 在 checkm 结果目录下生成 high_quality_genomes.txt 文件
     :param checkm_dir: checkM 结果目录
     :return: None
     """
-    checkm_dir = genome_dir.joinpath("genome_assess/checkm")
+    checkm_dir = gnmdir.joinpath("genome_assess/checkm")
     restab = f"{checkm_dir}/result.tsv"
     out_gnm_file = f"{checkm_dir}/high_quality_genomes.txt"
     df = pd.read_csv(restab, sep="\t", usecols=["Bin Id", "Completeness", "Contamination"])
     # ! [250526 FJH] 过滤条件
     # 1.基因组完整度 (Completeness) ≥ 90%
     # 2.污染度 (Contamination) ≤ 5%
-    df[(df["Completeness"] >= 90) & (df["Contamination"] <= 5)
-       ]["Bin Id"].to_csv(out_gnm_file, index=False, header=False)
+    fltr_df = df[(df["Completeness"] >= 90) & (df["Contamination"] <= 5)].copy()
+    fltr_df["Genome"] = fltr_df["Bin Id"].apply(lambda x: "_".join(x.split("_")[:2]))
+    fltr_df["Genome"].drop_duplicates().to_csv(out_gnm_file, index=False, header=False)
 
 
-def run_checkv(genome_dir: Path, threads: int):
+def run_checkv(gnmdir: Path, threads: int, force: bool):
     """
     运行 checkV
     checkV 评估单个基因组，不能像 checkM 那样评估 bins 多个基因组. 运行单个基因组的 checkV 后合并表格
-    genome_dir: 基因组目录, 例 /data/mengxf/Project/KML250416_chinacdc_pcr/genomes/Bandavirus_dabieense
+    gnmdir: 基因组目录, 例 /data/mengxf/Project/KML250416_chinacdc_pcr/genomes/Bandavirus_dabieense
     threads: 线程数
     """
     # 配置输出目录
-    all_dir = genome_dir.joinpath("all")
-    checkv_dir = genome_dir.joinpath("genome_assess/checkv")
+    all_dir = gnmdir.joinpath("all")
+    checkv_dir = gnmdir.joinpath("genome_assess/checkv")
     checkv_bins_dir = checkv_dir / "bins"
     checkv_bins_dir.mkdir(parents=True, exist_ok=True)
+    # * 如果结果文件已存在且不强制运行，则跳过
+    result_file = checkv_dir.joinpath("checkv_summary.tsv")
+    if result_file.exists() and not force:
+        logging.info(f"checkV 结果文件 {result_file} 已存在, 跳过运行.")
+        return
     # 并行和线程
     prl_num = 4
     sgl_thrd = threads // prl_num
@@ -119,16 +144,16 @@ def run_checkv(genome_dir: Path, threads: int):
         dfs.append(df)
     dfmrg = reduce(lambda x, y: pd.concat([x, y]), dfs)
     dfmrg.to_excel(checkv_dir / "checkv_summary.xlsx", index=False)
-    dfmrg.to_csv(checkv_dir / "checkv_summary.tsv", sep="\t", index=False)
+    dfmrg.to_csv(result_file, sep="\t", index=False)
 
 
-def filter_by_checkv(genome_dir):
+def filter_by_checkv(gnmdir: Path):
     """
     根据 checkV 结果过滤基因组, 在 checkv 结果目录下生成 high_quality_genomes.txt 文件
     :param checkv_dir: checkV 结果目录
     :return: None
     """
-    checkv_dir = genome_dir.joinpath("genome_assess/checkv")
+    checkv_dir = gnmdir.joinpath("genome_assess/checkv")
     restab = f"{checkv_dir}/checkv_summary.tsv"
     out_gnm_file = f"{checkv_dir}/high_quality_genomes.txt"
     # 病毒 checkv

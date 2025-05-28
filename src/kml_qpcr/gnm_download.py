@@ -15,11 +15,12 @@ from src.utils.util_write import list2txt
 
 def get_taxonomy_id_from_sciname(sciname: str, infodir: Path) -> list:
     """
-    使用 taxonkit 将 scientific name 转为 taxonomy id.
-    仅允许输入科以下的分类级别。
-
+    使用 taxonkit 将 scientific name 转为 taxonomy id. 仅允许输入科以下的分类级别.
     :param sciname: scientific name
+    :param infodir: 输出目录, 用于存储结果文件
     :return: scientific name 在当前分类级别下的 taxonomy id 列表
+    :raises ValueError: 如果 scientific name 的 rank 不在允许范围内
+    :raises RuntimeError: 如果 scientific name 的 taxid 列表为空
     """
     logging.info(f"获取 {sciname} 的 taxonomy id 列表")
     # 获取 scientific name 的 taxonomy id 和 rank
@@ -57,31 +58,41 @@ def get_assembly_summary_by_taxids(taxids: list, infodir: Path) -> pd.DataFrame:
     # 读入 RefSeq 的 assembly_summary_refseq.txt 文件
     usecols = ["#assembly_accession", "refseq_category", "taxid", "species_taxid", "organism_name",
                "assembly_level", "gbrs_paired_asm", "ftp_path", "genome_size", "scaffold_count", "contig_count"]
-    df_rf = pd.read_csv(ASSEMBLY_SUMMARY_REFSEQ, sep="\t", skiprows=1,
+    rf_df = pd.read_csv(ASSEMBLY_SUMMARY_REFSEQ, sep="\t", skiprows=1,
                         na_values=["na", ""], dtype=object, usecols=usecols)
-    df_gb = pd.read_csv(ASSEMBLY_SUMMARY_GENBANK, sep="\t", skiprows=1,
+    gb_df = pd.read_csv(ASSEMBLY_SUMMARY_GENBANK, sep="\t", skiprows=1,
                         na_values=["na", ""], dtype=object, usecols=usecols)
-    df_rs_cur_tax = df_rf.loc[df_rf["taxid"].isin(taxids),]
+    rs_cur_tax_df = rf_df.loc[rf_df["taxid"].isin(taxids), :]
     # refseq 中包含的条目不要重复下载
-    gbrs_paired_asms = df_rs_cur_tax["gbrs_paired_asm"].dropna().unique()
-    df_gb_cur_tax = df_gb[
-        (df_gb["taxid"].isin(taxids)) & (~df_gb["#assembly_accession"].isin(gbrs_paired_asms))]
-    df_rsgb_cnct = pd.concat([df_rs_cur_tax, df_gb_cur_tax], axis=0, ignore_index=True)
+    gbrs_paired_asms = rs_cur_tax_df["gbrs_paired_asm"].dropna().unique()
+    gb_cur_tax_df = gb_df[
+        (gb_df["taxid"].isin(taxids)) & (~gb_df["#assembly_accession"].isin(gbrs_paired_asms))]
+    rsgb_cnct_df = pd.concat([rs_cur_tax_df, gb_cur_tax_df], axis=0, ignore_index=True)
     # 输出到文件
-    df_rsgb_cnct.to_csv(Path(infodir).joinpath(
+    rsgb_cnct_df.to_csv(Path(infodir).joinpath(
         "assembly_summary_concat_refseq_genbank.tsv"), sep="\t", index=False)
-    return df_rsgb_cnct
+    return rsgb_cnct_df
 
 
-def download_genome_files(df_asmb_smry: pd.DataFrame, alldir: Path) -> None:
+def download_genome_files(sci_name: str, genome_set_dir: str) -> None:
     """
-    下载 genome 目录下面的指定文件, fna/gff/gtf/faa
-    :param df_rsgb_cnct: 当前物种 assembly summary dataframe
-    :param alldir: 当前物种存放 genome 的目录
+    下载 genome 目录下面的指定文件, fna/gff/gtf/faa/gbff
+    :sci_name: 物种学名, 如 "Bandavirus dabieense"
+    :genome_set_dir: 基因组集目录, 如 "kml_qpcr_genomes"
+    :return: None
     """
-    logging.info(f"下载 {df_asmb_smry.shape[0]} 个基因组的文件")
+    gnmdir = Path(genome_set_dir).joinpath(sci_name.replace(" ", "_"))
+    # 物种基因组集 info 目录
+    infodir = gnmdir.joinpath("info")
+    infodir.mkdir(parents=True, exist_ok=True)
+    taxids = get_taxonomy_id_from_sciname(sci_name, infodir)
+    rsgb_df = get_assembly_summary_by_taxids(taxids, infodir)
+    # 下载基因组文件
+    alldir = gnmdir.joinpath("all")
+    alldir.mkdir(parents=True, exist_ok=True)
+    logging.info(f"下载 {rsgb_df.shape[0]} 个基因组的文件")
     # 迭代每行, 每行为一个基因组
-    for row in df_asmb_smry.iterrows():
+    for row in rsgb_df.iterrows():
         asmb_acc = row[1]["#assembly_accession"]
         ftp_path = row[1]["ftp_path"]
         prfx = PurePosixPath(urlparse(ftp_path).path).name
@@ -97,7 +108,7 @@ def download_genome_files(df_asmb_smry: pd.DataFrame, alldir: Path) -> None:
         existed_links = []
         soup = BeautifulSoup(html_content, "html.parser")
         for a_tag in soup.find_all("a", href=True):
-            href = a_tag["href"]
+            href = a_tag["href"] # type: ignore
             if href in target_files:
                 existed_links.append(href)
         # 开始下载, 写入到文件, 方便后续没成功的文件继续下载
