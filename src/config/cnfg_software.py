@@ -1,6 +1,6 @@
 # mamba env 部分软件需要在环境内使用
 # - qpcr: checkm, checkv
-# - basic: bp_genbank2gff3(bioperl)
+# - meta: prokka
 ACTIVATE = "/home/mengxf/miniforge3/bin/activate"
 AMPLICON_EXTRACTOR = "/data/mengxf/Software/bin/amplicon-extractor"
 SEQKIT = "/home/mengxf/miniforge3/envs/basic/bin/seqkit"

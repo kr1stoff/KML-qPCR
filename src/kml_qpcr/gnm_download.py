@@ -9,8 +9,33 @@ from bs4 import BeautifulSoup
 from src.config.cnfg_database import TAXONKIT_DB, ASSEMBLY_SUMMARY_GENBANK, ASSEMBLY_SUMMARY_REFSEQ
 from src.config.cnfg_software import TAXONKIT
 from src.config.cnfg_taxonomy import BELOW_FAMILY_RANKS
-from src.utils.util_command import execute_command
-from src.utils.util_write import list2txt
+from src.utils.util_command import execute_cmd_and_get_stdout
+from src.utils.util_file import list2txt
+from src.utils.util_command import multi_run_command
+
+
+def download_genome_files(sci_name: str, genome_set_dir: str, threads: int) -> None:
+    """
+    下载 genome 目录下面的指定文件, fna
+    :sci_name: 物种学名, 如 "Bandavirus dabieense"
+    :genome_set_dir: 基因组集目录, 如 "kml_qpcr_genomes"
+    :threads: 线程数, 用于解压下载的 fna 文件
+    :return: None
+    """
+    logging.info(f"开始下载 {sci_name} 的基因组文件, 线程数: {threads}")
+    gnmdir = Path(genome_set_dir).joinpath(sci_name.replace(" ", "_"))
+    # 物种基因组集 info 目录
+    infodir = gnmdir.joinpath("info")
+    infodir.mkdir(parents=True, exist_ok=True)
+    taxids = get_taxonomy_id_from_sciname(sci_name, infodir)
+    rsgb_df = get_assembly_summary_by_taxids(taxids, infodir)
+    # 存放基因组下载文件的目录 all
+    alldir = gnmdir.joinpath("all")
+    alldir.mkdir(parents=True, exist_ok=True)
+    # 下载基因组文件并进行 md5 校验
+    download_and_md5sum(rsgb_df, alldir)
+    # 解压下载的 fna 文件
+    extract_fna_files(alldir, threads)
 
 
 def get_taxonomy_id_from_sciname(sciname: str, infodir: Path) -> list:
@@ -26,7 +51,7 @@ def get_taxonomy_id_from_sciname(sciname: str, infodir: Path) -> list:
     # 获取 scientific name 的 taxonomy id 和 rank
     cmd_name2taxid = (
         f"echo '{sciname}' | {TAXONKIT} name2taxid --data-dir {TAXONKIT_DB} --show-rank --sci-name")
-    output = execute_command(cmd_name2taxid)
+    output = execute_cmd_and_get_stdout(cmd_name2taxid)
     try:
         _, txid, rank = output.split("\t")
     except ValueError:
@@ -37,7 +62,7 @@ def get_taxonomy_id_from_sciname(sciname: str, infodir: Path) -> list:
     # 获取当前分类级别下的 taxonomy id 列表
     cmd_list_taxids = (
         f"{TAXONKIT} list --data-dir {TAXONKIT_DB} --indent '' --ids {txid}")
-    taxid_output = execute_command(cmd_list_taxids)
+    taxid_output = execute_cmd_and_get_stdout(cmd_list_taxids)
     taxids = taxid_output.split("\n")
     if not taxids or taxids == [""]:
         raise RuntimeError(
@@ -74,22 +99,7 @@ def get_assembly_summary_by_taxids(taxids: list, infodir: Path) -> pd.DataFrame:
     return rsgb_cnct_df
 
 
-def download_genome_files(sci_name: str, genome_set_dir: str) -> None:
-    """
-    下载 genome 目录下面的指定文件, fna/gff/gtf/faa/gbff
-    :sci_name: 物种学名, 如 "Bandavirus dabieense"
-    :genome_set_dir: 基因组集目录, 如 "kml_qpcr_genomes"
-    :return: None
-    """
-    gnmdir = Path(genome_set_dir).joinpath(sci_name.replace(" ", "_"))
-    # 物种基因组集 info 目录
-    infodir = gnmdir.joinpath("info")
-    infodir.mkdir(parents=True, exist_ok=True)
-    taxids = get_taxonomy_id_from_sciname(sci_name, infodir)
-    rsgb_df = get_assembly_summary_by_taxids(taxids, infodir)
-    # 下载基因组文件
-    alldir = gnmdir.joinpath("all")
-    alldir.mkdir(parents=True, exist_ok=True)
+def download_and_md5sum(rsgb_df: pd.DataFrame, alldir: Path):
     logging.info(f"下载 {rsgb_df.shape[0]} 个基因组的文件")
     # 迭代每行, 每行为一个基因组
     for row in rsgb_df.iterrows():
@@ -97,18 +107,19 @@ def download_genome_files(sci_name: str, genome_set_dir: str) -> None:
         ftp_path = row[1]["ftp_path"]
         prfx = PurePosixPath(urlparse(ftp_path).path).name
         # 创建当前基因组的目录
-        dir_cur_gnm = Path(alldir).joinpath(asmb_acc)
+        dir_cur_gnm = alldir.joinpath(asmb_acc)
         dir_cur_gnm.mkdir(parents=True, exist_ok=True)
         # 获取当前基因组的 ftp 目录页面, 要把 '/' 加上
         res = run(f"curl -l {ftp_path}/", shell=True, capture_output=True, text=True, check=True)
         html_content = res.stdout.strip()
         # 查看 fna, gtf, gff, faa 哪些文件可以下载 homotypic synonym
-        target_files = [prfx + kw for kw in ["_genomic.fna.gz", "_genomic.gff.gz",
-                                             "_genomic.gtf.gz", "_protein.faa.gz", "_genomic.gbff.gz"]]
+        # ! 目前流程只有用到 fna, 很多基因组没有做注释. 这里先注释掉可以下载多文件的方法
+        # target_files = [prfx + kw for kw in ["_genomic.fna.gz", "_genomic.gff.gz", "_genomic.gtf.gz", "_protein.faa.gz", "_genomic.gbff.gz"]]
+        target_files = [prfx + kw for kw in ["_genomic.fna.gz"]]
         existed_links = []
         soup = BeautifulSoup(html_content, "html.parser")
         for a_tag in soup.find_all("a", href=True):
-            href = a_tag["href"] # type: ignore
+            href = a_tag["href"]  # type: ignore
             if href in target_files:
                 existed_links.append(href)
         # 开始下载, 写入到文件, 方便后续没成功的文件继续下载
@@ -125,3 +136,18 @@ def download_genome_files(sci_name: str, genome_set_dir: str) -> None:
             run(f"touch {dir_cur_gnm}/md5checksums.OK", shell=True, check=True)
         else:
             run(f"touch {dir_cur_gnm}/md5checksums.FAILED", shell=True, check=True)
+
+
+def extract_fna_files(alldir: Path,  threads: int) -> None:
+    """
+    解压下载的 fna 文件
+    :param alldir: 存放下载的基因组文件的目录
+    :param threads: 线程数, 用于并行解压
+    :return: None
+    """
+    logging.info(f"解压 {alldir} 目录下的 fna 文件")
+    cmds = []
+    for fagz in alldir.glob("*/*.fna.gz"):
+        cmds.append(f"gunzip {fagz}")
+    # 并行运行
+    multi_run_command(cmds, threads)
