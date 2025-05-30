@@ -11,7 +11,8 @@ from src.config.cnfg_database import CHECKV_DB
 def assess_genome_quality(sci_name: str, genome_set_dir: str, threads: int, pthgn_type: str, force: bool = False):
     """
     基因组质量评估
-    :gnmdir: 基因组目录, 例 /data/mengxf/Project/KML250416_chinacdc_pcr/genomes/Ehrlichia_chaffeensis
+    :sci_name: 物种名称, 例 Ehrlichia_chaffeensis
+    :gnm_dgenome_set_dirir: 基因组目录, 例 /data/mengxf/Project/KML250416_chinacdc_pcr/genomes/Ehrlichia_chaffeensis
     :threads: 线程数
     :pthgn_type: 病原类型, 例 Bacteria 或 Viruses
     :force: 是否强制重新运行 checkM/checkV, 默认识别到结果文件就跳过
@@ -27,32 +28,34 @@ def assess_genome_quality(sci_name: str, genome_set_dir: str, threads: int, pthg
     └── ...
     """
     logging.info(f"开始基因组质量评估: {sci_name}, 病原类型: {pthgn_type}, 线程数: {threads}, 强制重新运行: {force}")
-    gnmdir = Path(genome_set_dir).joinpath(sci_name.replace(" ", "_"))
+    gnm_dir = Path(genome_set_dir).joinpath(sci_name.replace(" ", "_"))
+    assess_dir = gnm_dir / "genome_assess"
     if pthgn_type == "Bacteria":
         # 细菌
-        run_checkm(gnmdir, threads, force)
-        # filter_by_checkm(gnmdir)
+        run_checkm(gnm_dir, threads, force)
+        get_genome_anno_quality(gnm_dir)
+        merge_checkm_rna_stats(assess_dir)
+        filter_by_merge_df_bacteria(assess_dir)
     else:
         # 病毒
-        run_checkv(gnmdir, threads, force)
-        filter_by_checkv(gnmdir)
+        run_checkv(gnm_dir, threads, force)
+        filter_by_checkv(gnm_dir)
 
 
-def run_checkm(gnmdir: Path, threads: int, force: bool):
+def run_checkm(gnm_dir: Path, threads: int, force: bool):
     """
     运行 checkM
     checkM 评估 bins 多个基因组
-    gnmdir: 基因组目录, 例 /data/mengxf/Project/KML250416_chinacdc_pcr/genomes/Ehrlichia_chaffeensis
+    gnm_dir: 基因组目录, 例 /data/mengxf/Project/KML250416_chinacdc_pcr/genomes/Ehrlichia_chaffeensis
     threads: 线程数
     """
     # 创建 checkM 输入 bins 目录，复制并解压所有基因组
-    all_dir = gnmdir.joinpath("all")
-    bins_dir = gnmdir.joinpath("genome_assess/checkm_input")
+    all_dir = gnm_dir.joinpath("all")
+    bins_dir = gnm_dir.joinpath("genome_assess/checkm_input")
     bins_dir.mkdir(parents=True, exist_ok=True)
-    run(f"cp {all_dir}/*/*_genomic.fna {bins_dir}", shell=True, check=True)
-    run(f"gunzip --force {bins_dir}/*gz", shell=True, check=True)
+    run(f"cp {all_dir}/*/*.fna {bins_dir}", shell=True, check=True)
     # 运行 checkM
-    checkm_dir = gnmdir.joinpath("genome_assess/checkm")
+    checkm_dir = gnm_dir.joinpath("genome_assess/checkm")
     checkm_dir.mkdir(parents=True, exist_ok=True)
     result_file = checkm_dir.joinpath("result.tsv")
     # * 如果结果文件已存在且不强制运行，则跳过
@@ -74,13 +77,13 @@ def run_checkm(gnmdir: Path, threads: int, force: bool):
     run(f"{CSVTK} -t csv2xlsx {result_file}", shell=True, check=True)
 
 
-def get_genome_anno_quality(gnmdir: Path):
+def get_genome_anno_quality(gnm_dir: Path) -> None:
     """
     获取基因组注释质量
-    :param gnmdir: 基因组目录
+    :param gnm_dir: 基因组目录
     """
     # 输入 Prokka 注释结果的目录
-    prk_dir = gnmdir / "genome_annotate"
+    prk_dir = gnm_dir / "genome_annotate"
     # 获取去所有 prokka.tsv 特征文件中 rRNA, tRNA 数量
     rna_mtrx = []
     for feat_file in prk_dir.glob("*/prokka.tsv"):
@@ -98,43 +101,60 @@ def get_genome_anno_quality(gnmdir: Path):
     # 转换为 DataFrame
     rna_df = pd.DataFrame(rna_mtrx, columns=["genome_id", "23SrRNA", "16SrRNA", "5SrRNA", "tRNA"])
     # 保存为 CSV
-    rna_df.to_csv(gnmdir / "genome_assess/rna_quality.csv", index=False)
+    rna_df.to_csv(gnm_dir / "genome_assess/rna_quality.csv", index=False)
 
 
-def merge_checkm_rna_datafram(assess_dir: Path):
+def merge_checkm_rna_stats(assess_dir: Path):
     """
+    合并 checkM 和 RNA 统计表
+    :param assess_dir: 评估目录
     """
+    # checkm 结果, 仅保留必须三列
+    checkm_df = pd.read_csv(f"{assess_dir}/checkm/result.tsv", sep="\t",
+                            usecols=["Bin Id", "Completeness", "Contamination"])
+    checkm_df["genome_id"] = checkm_df.apply(
+        lambda row: "_".join(row["Bin Id"].split("_")[:2]), axis=1)
+    # 重排列表顺序
+    checkm_df = checkm_df[["genome_id", "Completeness", "Contamination"]]
+    # 重新读一下 RNA 统计表
+    rna_df = pd.read_csv(assess_dir / "rna_quality.csv")
+    # 合并
+    merge_df = pd.merge(checkm_df, rna_df, on="genome_id")
+    merge_df.to_excel(assess_dir / "checkm_rna_statistics.xlsx", index=False)
+    merge_df.to_csv(assess_dir / "checkm_rna_statistics.csv", index=False)
 
 
-# TODO 加入了注释质量，需要重新过滤
-# def filter_by_checkm(gnmdir: Path):
-#     """
-#     根据 checkM 结果过滤基因组, 生成 high_quality_genomes.txt 文件
-#     :param checkm_dir: checkM 结果目录
-#     :return: None
-#     """
-#     out_gnm_file = gnmdir / "genome_assess/high_quality_genomes.txt"
-#     checkm_dir = gnmdir.joinpath("genome_assess/checkm")
-#     restab = f"{checkm_dir}/result.tsv"
-#     df = pd.read_csv(restab, sep="\t", usecols=["Bin Id", "Completeness", "Contamination"])
-#     # ! [250526 FJH] 过滤条件
-#     # 1.基因组完整度 (Completeness) ≥ 90%
-#     # 2.污染度 (Contamination) ≤ 5%
-#     fltr_df = df[(df["Completeness"] >= 90) & (df["Contamination"] <= 5)].copy()
-#     fltr_df["Genome"] = fltr_df["Bin Id"].apply(lambda x: "_".join(x.split("_")[:2]))
-#     fltr_df["Genome"].drop_duplicates().to_csv(out_gnm_file, index=False, header=False)
+def filter_by_merge_df_bacteria(assess_dir: Path):
+    """
+    根据 checkM 和 RNA 统计表合并结果过滤基因组, 生成 high_quality_genomes.txt 文件
+    :param assess_dir: 评估目录
+    """
+    df = pd.read_csv(assess_dir / "checkm_rna_statistics.csv")
+    # ! [250526 FJH] 过滤条件
+    # 1. 基因组完整度 (Completeness) ≥ 90%
+    # 2. 污染度 (Contamination) ≤ 5%
+    # 3. 注释到23S rRNA基因、16S rRNA基因、5S rRNA基因和至少18个tRNA基因
+    fltr_df = (
+        df[df["Completeness"] >= 90]
+        .loc[df["Contamination"] <= 5]
+        .loc[df["23SrRNA"] > 0]
+        .loc[df["16SrRNA"] > 0]
+        .loc[df["5SrRNA"] > 0]
+        .loc[df["tRNA"] >= 18]
+    )
+    fltr_df["genome_id"].to_csv(assess_dir / "high_quality_genomes.txt", index=False, header=False)
 
 
-def run_checkv(gnmdir: Path, threads: int, force: bool):
+def run_checkv(gnm_dir: Path, threads: int, force: bool):
     """
     运行 checkV
     checkV 评估单个基因组，不能像 checkM 那样评估 bins 多个基因组. 运行单个基因组的 checkV 后合并表格
-    gnmdir: 基因组目录, 例 /data/mengxf/Project/KML250416_chinacdc_pcr/genomes/Bandavirus_dabieense
+    gnm_dir: 基因组目录, 例 /data/mengxf/Project/KML250416_chinacdc_pcr/genomes/Bandavirus_dabieense
     threads: 线程数
     """
     # 配置输出目录
-    all_dir = gnmdir.joinpath("all")
-    checkv_dir = gnmdir.joinpath("genome_assess/checkv")
+    all_dir = gnm_dir.joinpath("all")
+    checkv_dir = gnm_dir.joinpath("genome_assess/checkv")
     checkv_bins_dir = checkv_dir / "bins"
     checkv_bins_dir.mkdir(parents=True, exist_ok=True)
     # * 如果结果文件已存在且不强制运行，则跳过
@@ -172,14 +192,14 @@ def run_checkv(gnmdir: Path, threads: int, force: bool):
     dfmrg.to_csv(result_file, sep="\t", index=False)
 
 
-def filter_by_checkv(gnmdir: Path):
+def filter_by_checkv(gnm_dir: Path):
     """
     根据 checkV 结果过滤基因组, 生成 high_quality_genomes.txt 文件
     :param checkv_dir: checkV 结果目录
     :return: None
     """
-    checkv_dir = gnmdir / "genome_assess/checkv"
-    out_gnm_file = gnmdir / "genome_assess/high_quality_genomes.txt"
+    checkv_dir = gnm_dir / "genome_assess/checkv"
+    out_gnm_file = gnm_dir / "genome_assess/high_quality_genomes.txt"
     restab = checkv_dir / "checkv_summary.tsv"
     # 病毒 checkv
     df = pd.read_csv(restab, sep="\t", usecols=[

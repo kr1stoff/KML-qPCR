@@ -99,7 +99,13 @@ def get_assembly_summary_by_taxids(taxids: list, infodir: Path) -> pd.DataFrame:
     return rsgb_cnct_df
 
 
-def download_and_md5sum(rsgb_df: pd.DataFrame, alldir: Path):
+def download_and_md5sum(rsgb_df: pd.DataFrame, alldir: Path) -> None:
+    """
+    根据目标微生物的 assembly summary 下载对应的 fna 文件, 并进行 md5 校验
+    :param rsgb_df: assembly summary dataframe
+    :param alldir: 存放下载的基因组文件的目录
+    :return: None
+    """
     logging.info(f"下载 {rsgb_df.shape[0]} 个基因组的文件")
     # 迭代每行, 每行为一个基因组
     for row in rsgb_df.iterrows():

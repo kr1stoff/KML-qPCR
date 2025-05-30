@@ -28,7 +28,7 @@ poetry run python -m src.kml_qpcr annotate \
 
 # 3. 评估基因组
 poetry run python -m src.kml_qpcr assess \
-  --threads 8 \
+  --threads 32 \
   --sci-name 'Coxiella Burnetii' \
   --genome-set-dir /data/mengxf/Project/KML250416_chinacdc_pcr/genomes
 ```
