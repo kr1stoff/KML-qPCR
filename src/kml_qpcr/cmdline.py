@@ -1,9 +1,10 @@
 import click
 
 from src.kml_qpcr.gnm_download import download_genome_files
-from src.kml_qpcr.gnm_quality_assess import assess_genome_quality
+from src.kml_qpcr.gnm_quality_assess import GenomeQualityAssessor, GenomeQualityAssessorViruses
 from src.kml_qpcr.cstm_gnms_load import load_customer_genomes
-from src.kml_qpcr.gnm_annotate import annotate_genomes
+from src.kml_qpcr.gnm_annotate import GenomeAnnotator
+from src.kml_qpcr.csvd_gene_obtain import ConservedGenePredictor
 
 
 @click.group()
@@ -15,9 +16,10 @@ def cli():
 
 def common_options(func):
     """通用参数装饰器"""
+    func = click.option("--force", is_flag=True, help="强制重新运行第三方软件 默认识别到结果文件就跳过.")(func)
     func = click.option("--threads", default=4, type=int, show_default=True, help="全局线程数.")(func)
     func = click.option("--genome-set-dir", default="kml_qpcr_genomes",
-                        show_default=True, help="项目基因组集目录, 输出结果在该目录下.")(func)
+                        show_default=True, help="项目微生物总目录, 输出结果在该目录下.")(func)
     func = click.option("--sci-name", required=True, help="输入物种学名.")(func)
     func = click.help_option(help="显示帮助信息.")(func)
     return func
@@ -40,16 +42,48 @@ def load(customer_genome_dir, sci_name, genome_set_dir, threads):
 
 @cli.command()
 @common_options
-@click.option("--force", is_flag=True, help="强制重新运行 prokka, 默认识别到结果文件就跳过.")
 def annotate(sci_name, genome_set_dir, threads, force):
     """注释基因组"""
-    annotate_genomes(sci_name, genome_set_dir, threads, force)
+    ga = GenomeAnnotator(
+        sci_name=sci_name,
+        genome_set_dir=genome_set_dir,
+        threads=threads,
+        force=force
+    )
+    ga.run()
 
 
 @cli.command()
 @common_options
 @click.option("--pathogen-type", type=click.Choice(["Bacteria", "Viruses"]), default="Bacteria", show_default=True, help="输入病原类型.")
-@click.option("--force", is_flag=True, help="强制重新运行 checkM/checkV, 默认识别到结果文件就跳过.")
 def assess(sci_name, genome_set_dir, pathogen_type, threads, force):
     """质控评估"""
-    assess_genome_quality(sci_name, genome_set_dir, threads, pathogen_type, force)
+    assessor_class = (
+        GenomeQualityAssessor
+        if pathogen_type == "Bacteria"
+        else GenomeQualityAssessorViruses
+    )
+    gqa = assessor_class(
+        sci_name=sci_name,
+        genome_set_dir=genome_set_dir,
+        threads=threads,
+        force=force
+    )
+    gqa.run()
+
+
+@cli.command()
+@common_options
+@click.option("--core-isolates-percent", type=int, default=100, show_default=True, help="核心基因覆盖分离株百分比阈值.")
+@click.option("--blastp-identity", type=int, default=100, show_default=True, help="BlastP 相似度阈值")
+def conserved(sci_name, genome_set_dir, threads, force, core_isolates_percent, blastp_identity):
+    """保守区域预测"""
+    cgp = ConservedGenePredictor(
+        sci_name=sci_name,
+        genome_set_dir=genome_set_dir,
+        threads=threads,
+        core_islt_perc=core_isolates_percent,
+        core_blastp_idnt=blastp_identity,
+        force=force
+    )
+    cgp.run()

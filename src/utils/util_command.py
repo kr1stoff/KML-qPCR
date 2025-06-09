@@ -19,13 +19,13 @@ def execute_cmd_and_get_stdout(cmd: str) -> str:
         raise RuntimeError(f"命令执行失败: {cmd}\n错误信息: {e.stderr}")
 
 
-def multi_run_command(cmds: list[str], thread: int) -> None:
+def multi_run_command(cmds: list[str], threads: int) -> None:
     """
     使用多线程执行一组 shell 命令.
 
     :param cmds: 要执行的命令列表.
-    :param thread: 线程数.
+    :param threads: 线程数.
     """
-    _run = partial(run, shell=True, check=True)
-    with Pool(processes=thread) as pool:
+    _run = partial(run, shell=True, check=True, executable="/bin/bash")
+    with Pool(processes=threads) as pool:
         pool.map(_run, cmds)

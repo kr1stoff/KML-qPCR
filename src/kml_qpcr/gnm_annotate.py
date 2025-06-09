@@ -1,69 +1,50 @@
 from pathlib import Path
-from subprocess import run
 import logging
 
-from src.config.cnfg_software import ACTIVATE, PARALLEL
-from src.utils.util_file import count_file_lines
+from src.config.cnfg_software import ACTIVATE
+from src.utils.util_command import multi_run_command
 
 
-def annotate_genomes(sci_name: str, genome_set_dir: str, threads: int, force: bool) -> None:
-    """
-    注释基因组.
-    :param sci_name: 物种学名.
-    :param genome_set_dir: 基因组集目录.
-    :param threads: 全局线程数.
-    :param force: 是否强制重新运行 prokka, 默认识别到结果文件就跳过.
-    :return: None
-    """
-    logging.info(f"开始注释基因组: {sci_name}, 线程数: {threads}, 强制重新运行: {force}")
-    # TODO 病毒
-    sci_name = sci_name.replace(" ", "_")
-    # 当前物种目录
-    gnm_dir = Path(genome_set_dir) / sci_name
-    # 当前物种目录下 all 文件夹
-    all_dir = gnm_dir / "all"
-    # 存放注释结果的文件夹
-    gnm_annt_dir = gnm_dir / "genome_annotate"
-    gnm_annt_dir.mkdir(parents=True, exist_ok=True)
-    # 运行 prokka
-    run_prokka(all_dir, gnm_annt_dir, threads, force)
+class GenomeAnnotator:
+    def __init__(self, sci_name: str, genome_set_dir: str, threads: int, force: bool):
+        """
+        注释基因组.
+        :param sci_name: 物种学名.
+        :param genome_set_dir: 基因组集目录.
+        :param threads: 全局线程数.
+        :param force: 是否强制重新运行 prokka, 默认识别到结果文件就跳过.
+        """
+        # 当前物种目录
+        self.gnm_dir = Path(genome_set_dir) / sci_name.replace(" ", "_")
+        self.threads = threads
+        self.force = force
+        # 存放注释结果的文件夹
+        self.gnm_annt_dir = self.gnm_dir / "genome_annotate"
+        self.gnm_annt_dir.mkdir(parents=True, exist_ok=True)
 
+    def run(self) -> None:
+        logging.info(f"开始注释基因组: {self.gnm_dir}, 线程数: {self.threads}, 强制重新运行: {self.force}")
+        # 运行 prokka
+        self.run_prokka()
 
-def run_prokka(all_dir: Path, gnm_annt_dir: Path, threads: int, force: bool):
-    """
-    使用 Prokka 进行基因组注释.
-    :param all_dir: 包含所有基因组的目录.
-    :param gnm_annt_dir: 注释结果输出目录.
-    :param threads: 使用的线程数.
-    """
-    # 并行数看情况修改
-    prl_num = min(4, threads)
-    sgl_thrds = threads // prl_num
-    # ! all 目录里面只放基因组文件夹, 不要放别的
-    with open(f"{gnm_annt_dir}/prokka_batch.sh", "w") as f:
-        for cur_gnm_dir in all_dir.iterdir():
-            gnm_num = cur_gnm_dir.name
-            fna = list(cur_gnm_dir.glob("*.fna"))[0]
-            prk_cmd = f"prokka --cpu {sgl_thrds} --force --prefix prokka --outdir {gnm_annt_dir}/{gnm_num} --kingdom Bacteria --addgenes --quiet --locustag {gnm_num} {fna}"
-            f.write(prk_cmd + "\n")
-    # 进入 meta 环境运行 prokka_batch.sh
-    prk_batch_cmd = f"""
-source {ACTIVATE} meta
-cat {gnm_annt_dir}/prokka_batch.sh | {PARALLEL} -j {prl_num}
-conda deactivate
-"""
-    if force or not prokka_is_complete_run(gnm_annt_dir):
-        run(prk_batch_cmd, shell=True, check=True, executable="/bin/bash")
-    else:
-        logging.info("Prokka 已经运行完成, 跳过注释.")
+    def run_prokka(self):
+        """使用 Prokka 进行基因组注释."""
+        # 当前物种目录下 all 文件夹
+        all_dir = self.gnm_dir / "all"
+        # 如果不是强制重新运行, 并且 prokka 已经运行完成, 则跳过注释
+        gff_count = len(list(self.gnm_annt_dir.glob("*/*.gff")))
+        fna_count = len(list(all_dir.glob("**/*.fna")))
+        if (not self.force) and (gff_count >= fna_count):
+            logging.warning("Prokka 已经运行完成, 跳过注释.")
+            return
+        # 批量运行 prokka
+        # 和后面统一不用 PARALELL 用 multiprocessing.Pool 替代
+        prk_cmds = []
+        for fna in all_dir.glob("**/*.fna"):
+            gnm_id = fna.parent.name
+            # ! Roary 需要每个 GFF 文件 basename 不同. Error: GFF files must have unique basenames
+            prk_cmd = f"source {ACTIVATE} meta && prokka --cpu 1 --force --prefix {gnm_id} --outdir {self.gnm_annt_dir}/{gnm_id} --kingdom Bacteria --addgenes --quiet --locustag {gnm_id} {fna} && conda deactivate"
+            prk_cmds.append(prk_cmd)
+        multi_run_command(prk_cmds, self.threads)
 
-
-def prokka_is_complete_run(gnm_annt_dir: Path) -> bool:
-    """
-    检查 prokka 是否已经运行完成.
-    :param gnm_annt_dir: 注释结果输出目录.
-    :return: 如果 prokka 结果文件存在则返回 True, 否则返回 False.
-    """
-    gnm_count = count_file_lines(f"{gnm_annt_dir}/prokka_batch.sh")
-    result_files = list(gnm_annt_dir.glob("*/prokka.gff"))
-    return len(result_files) == gnm_count
+# TODO 病毒注释

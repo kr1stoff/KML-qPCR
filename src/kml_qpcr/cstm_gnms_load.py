@@ -14,8 +14,7 @@ def load_customer_genomes(cstm_gnm_dir: str, sci_name: str, gnm_set_dir: str, th
     :param gnm_set_dir: 项目基因组集目录
     """
     logging.info(f"开始导入客户基因组集: {cstm_gnm_dir}, 物种学名: {sci_name}, 基因组集目录: {gnm_set_dir}")
-    sci_name = sci_name.replace(" ", "_")  # 替换空格为下划线
-    all_dir = Path(gnm_set_dir) / sci_name / "all"
+    all_dir = Path(gnm_set_dir) / sci_name.replace(" ", "_") / "all"
     cmds = []
     for fna in Path(cstm_gnm_dir).glob("*.fna"):
         # 获取基因组名称
@@ -28,4 +27,4 @@ def load_customer_genomes(cstm_gnm_dir: str, sci_name: str, gnm_set_dir: str, th
         cmds.append(copy_cmd)
         # 执行所有复制命令
     if cmds:
-        multi_run_command(cmds, thread=4)
+        multi_run_command(cmds, threads=threads)
