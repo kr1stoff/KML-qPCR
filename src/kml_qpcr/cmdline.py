@@ -20,7 +20,7 @@ def common_options(func):
     func = click.option("--threads", default=4, type=int, show_default=True, help="全局线程数.")(func)
     func = click.option("--genome-set-dir", default="kml_qpcr_genomes",
                         show_default=True, help="项目微生物总目录, 输出结果在该目录下.")(func)
-    func = click.option("--sci-name", required=True, help="输入物种学名.")(func)
+    func = click.option("--sci-name", required=True, help="输入物种学名. 例如 'Coxiella Burnetii'.")(func)
     func = click.help_option(help="显示帮助信息.")(func)
     return func
 
