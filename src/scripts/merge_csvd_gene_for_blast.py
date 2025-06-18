@@ -22,11 +22,14 @@ SeqIO.write(genes, blast_dir / "csvd_gene_seq_set.fasta", "fasta")
 
 # blastout
 """
+# ! ssciname 需要安装 taxdb 数据库
+# Warning: [blastn] Taxonomy name lookup from taxid requires installation of taxdb database with ftp://ftp.ncbi.nlm.nih.gov/blast/db/taxdb.tar.gz
+export BLASTDB=/data/mengxf/Database/NCBI/blast/db/core_nt
 mamba run -n basic blastn -num_threads 16 \
     -query csvd_gene_seq_set.fasta \
     -db /data/mengxf/Database/NCBI/blast/db/core_nt/core_nt \
-    -out blastn.out2 \
+    -out blastn.out \
     -perc_identity 60 \
     -qcov_hsp_perc 60 \
-    -outfmt "6 qseqid sseqid staxid pident qcovs length qlen slen sstart send qstart qend nident evalue bitscore"
+    -outfmt "6 qseqid sseqid ssciname staxid pident qcovs length qlen slen sstart send qstart qend nident evalue bitscore"
 """
