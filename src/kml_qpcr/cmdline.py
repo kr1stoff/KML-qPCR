@@ -5,6 +5,7 @@ from src.kml_qpcr.gnm_quality_assess import GenomeQualityAssessor, GenomeQuality
 from src.kml_qpcr.cstm_gnms_load import load_customer_genomes
 from src.kml_qpcr.gnm_annotate import GenomeAnnotator
 from src.kml_qpcr.csvd_gene_obtain import ConservedGenePredictor
+from src.kml_qpcr.spec_gene_obtain import SpeciticityGeneObtainer
 
 
 @click.group()
@@ -87,3 +88,15 @@ def conserved(sci_name, genome_set_dir, threads, force, core_isolates_percent, b
         force=force
     )
     cgp.run()
+
+@cli.command()
+@common_options
+def specificity(sci_name, genome_set_dir, threads, force):
+    """特异性基因预测"""
+    sgo = SpeciticityGeneObtainer(
+            sci_name=sci_name,
+            genome_set_dir=genome_set_dir,
+            threads=threads,
+            force=force
+    )
+    sgo.run()

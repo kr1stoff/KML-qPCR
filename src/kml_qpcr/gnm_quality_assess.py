@@ -4,12 +4,13 @@ import logging
 from functools import reduce
 import pandas as pd
 
+from src.kml_qpcr.base import BaseQPCR
 from src.config.cnfg_software import CSVTK, ACTIVATE
 from src.config.cnfg_database import CHECKV_DB
 from src.utils.util_command import multi_run_command
 
 
-class GenomeQualityAssessor:
+class GenomeQualityAssessor(BaseQPCR):
     def __init__(self, sci_name: str, genome_set_dir: str, threads: int, force: bool = False):
         """
         初始化基因组质量评估器
@@ -18,9 +19,7 @@ class GenomeQualityAssessor:
         :threads: 线程数
         :force: 是否强制重新运行 checkM/checkV, 默认识别到结果文件就跳过
         """
-        self.gnm_dir = Path(genome_set_dir).joinpath(sci_name.replace(" ", "_"))
-        self.threads = threads
-        self.force = force
+        super().__init__(sci_name, genome_set_dir, threads, force)
         # 分离株基因组评估目录
         self.assess_dir = self.gnm_dir / "genome_assess"
 

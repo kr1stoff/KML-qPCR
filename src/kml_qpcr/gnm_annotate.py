@@ -1,11 +1,12 @@
 from pathlib import Path
 import logging
 
+from src.kml_qpcr.base import BaseQPCR
 from src.config.cnfg_software import ACTIVATE
 from src.utils.util_command import multi_run_command
 
 
-class GenomeAnnotator:
+class GenomeAnnotator(BaseQPCR):
     def __init__(self, sci_name: str, genome_set_dir: str, threads: int, force: bool):
         """
         注释基因组.
@@ -14,10 +15,7 @@ class GenomeAnnotator:
         :param threads: 全局线程数.
         :param force: 是否强制重新运行 prokka, 默认识别到结果文件就跳过.
         """
-        # 当前物种目录
-        self.gnm_dir = Path(genome_set_dir) / sci_name.replace(" ", "_")
-        self.threads = threads
-        self.force = force
+        super().__init__(sci_name, genome_set_dir, threads, force)
         # 存放注释结果的文件夹
         self.gnm_annt_dir = self.gnm_dir / "genome_annotate"
         self.gnm_annt_dir.mkdir(parents=True, exist_ok=True)

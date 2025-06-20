@@ -32,4 +32,5 @@ mamba run -n basic blastn -num_threads 16 \
     -perc_identity 60 \
     -qcov_hsp_perc 60 \
     -outfmt "6 qseqid sseqid ssciname staxid pident qcovs length qlen slen sstart send qstart qend nident evalue bitscore"
+ sed -i '1i\qseqid\tsseqid\tssciname\tstaxid\tpident\tqcovs\tlength\tqlen\tslen\tsstart\tsend\tqstart\tqend\tnident\tevalue\tbitscore' blastn.out
 """

@@ -3,12 +3,13 @@ from subprocess import run
 import logging
 import pandas as pd
 
+from src.kml_qpcr.base import BaseQPCR
 from src.config.cnfg_software import ACTIVATE, SEQKIT, SEQTK
 from src.utils.util_command import multi_run_command
 
 
-class ConservedGenePredictor:
-    def __init__(self, sci_name: str, genome_set_dir: str, threads: int, core_islt_perc: int, core_blastp_idnt, force: bool):
+class ConservedGenePredictor(BaseQPCR):
+    def __init__(self, sci_name: str, genome_set_dir: str, threads: int, core_islt_perc: int, core_blastp_idnt: int, force: bool):
         """
         初始化保守基因预测器
         :sci_name: 目标微生物科学名
@@ -18,14 +19,9 @@ class ConservedGenePredictor:
         :core_blastp_idnt: 核心基因在分离株间相似度
         :force: 是否强制执行
         """
-        self.sci_name = sci_name
-        self.genome_set_dir = genome_set_dir
-        self.threads = threads
+        super().__init__(sci_name, genome_set_dir, threads, force)
         self.core_islt_perc = core_islt_perc
         self.core_blastp_idnt = core_blastp_idnt
-        self.force = force
-        # 当前微生物基因组目录
-        self.gnm_dir = Path(genome_set_dir).joinpath(sci_name.replace(" ", "_"))
         # 保守基因目录
         self.csvd_dir = self.gnm_dir / "conserved_gene"
         self.csvd_dir.mkdir(exist_ok=True, parents=True)
