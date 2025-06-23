@@ -23,7 +23,7 @@ class SpeciticityGeneObtainer(BaseQPCR):
         self.blast_dir = self.gnm_dir / "specific_gene/blast"
         self.blast_dir.mkdir(exist_ok=True, parents=True)
         self.blast_query = self.blast_dir / "csvd_gene_seq_set.fasta"
-        self.blast_out = self.blast_dir / "blastn.out"
+        self.blast_out = self.blast_dir / "blastn.tsv"
 
     def run(self):
         self.merge_csvd_gene_for_blast()

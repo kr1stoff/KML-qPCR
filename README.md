@@ -5,7 +5,8 @@
 1. 下载基因组
 2. 注释基因组
 3. 评估基因组
-4. 保守基因获取
+4. 获取保守基因
+5. 保守基因特异性评估
 
 ```bash
 # 1. 下载基因组
@@ -28,6 +29,18 @@ poetry run python -m src.kml_qpcr annotate \
 
 # 3. 评估基因组
 poetry run python -m src.kml_qpcr assess \
+  --threads 32 \
+  --sci-name 'Coxiella Burnetii' \
+  --genome-set-dir /data/mengxf/Project/KML250416_chinacdc_pcr/genomes
+
+# 4. 获取保守基因
+poetry run python -m src.kml_qpcr conserved \
+  --threads 32 \
+  --sci-name 'Coxiella Burnetii' \
+  --genome-set-dir /data/mengxf/Project/KML250416_chinacdc_pcr/genomes
+
+# 5. 保守基因特异性评估
+poetry run python -m src.kml_qpcr specificity \
   --threads 32 \
   --sci-name 'Coxiella Burnetii' \
   --genome-set-dir /data/mengxf/Project/KML250416_chinacdc_pcr/genomes

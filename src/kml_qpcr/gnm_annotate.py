@@ -31,14 +31,14 @@ class GenomeAnnotator(BaseQPCR):
         all_dir = self.gnm_dir / "all"
         # 如果不是强制重新运行, 并且 prokka 已经运行完成, 则跳过注释
         gff_count = len(list(self.gnm_annt_dir.glob("*/*.gff")))
-        fna_count = len(list(all_dir.glob("**/*.fna")))
+        fna_count = len(list(all_dir.glob("*/*.fna")))
         if (not self.force) and (gff_count >= fna_count):
             logging.warning("Prokka 已经运行完成, 跳过注释.")
             return
         # 批量运行 prokka
         # 和后面统一不用 PARALELL 用 multiprocessing.Pool 替代
         prk_cmds = []
-        for fna in all_dir.glob("**/*.fna"):
+        for fna in all_dir.glob("*/*.fna"):
             gnm_id = fna.parent.name
             # ! Roary 需要每个 GFF 文件 basename 不同. Error: GFF files must have unique basenames
             prk_cmd = f"source {ACTIVATE} meta && prokka --cpu 1 --force --prefix {gnm_id} --outdir {self.gnm_annt_dir}/{gnm_id} --kingdom Bacteria --addgenes --quiet --locustag {gnm_id} {fna} && conda deactivate"
