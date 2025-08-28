@@ -45,4 +45,4 @@ class GenomeAnnotator(BaseQPCR):
             prk_cmds.append(prk_cmd)
         multi_run_command(prk_cmds, self.threads)
 
-# TODO 病毒注释
+# todo 病毒注释
